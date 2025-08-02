@@ -247,11 +247,11 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
-      AND table_name IN ('jobs', 'job_codes')
+      AND table_name IN ('jobs')
     `
 
     const existingTables = tables.map((row) => row.table_name)
-    const requiredTables = ["jobs", "job_codes"]
+    const requiredTables = ["jobs"]
     const missingTables = requiredTables.filter((table) => !existingTables.includes(table))
 
     // Get job statistics if tables exist
@@ -456,26 +456,11 @@ export async function initializeTables(): Promise<{ success: boolean; message: s
         )
       `
 
-      // Create job_codes table
-      await client`
-        CREATE TABLE IF NOT EXISTS job_codes (
-          id SERIAL PRIMARY KEY,
-          occ_code VARCHAR(10) UNIQUE NOT NULL,
-          occ_title VARCHAR(255) NOT NULL,
-          major_group VARCHAR(100),
-          minor_group VARCHAR(100),
-          broad_occupation VARCHAR(100),
-          detailed_occupation VARCHAR(255),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `
-
       // Create indexes for better performance
       await client`CREATE INDEX IF NOT EXISTS idx_jobs_occ_code ON jobs(occ_code)`
       await client`CREATE INDEX IF NOT EXISTS idx_jobs_ai_impact ON jobs(ai_impact_score)`
       await client`CREATE INDEX IF NOT EXISTS idx_jobs_title ON jobs(occ_title)`
-      await client`CREATE INDEX IF NOT EXISTS idx_job_codes_occ_code ON job_codes(occ_code)`
-    })
+    }) // ← close withTransaction block
 
     console.log("✅ Database tables initialized successfully")
     return { success: true, message: "Database tables created successfully" }
