@@ -205,7 +205,7 @@ export async function sqlEnhanced<T = any>(
 export async function testDatabaseConnection(): Promise<{ success: boolean; error?: string; responseTime?: number }> {
   try {
     const startTime = Date.now()
-    await sqlEnhanced("SELECT 1 as test")
+    await sqlEnhanced`SELECT 1 as test`
     const responseTime = Date.now() - startTime
 
     return {
@@ -239,7 +239,7 @@ export async function getDatabaseStatus(): Promise<DatabaseStatus> {
     }
 
     const startTime = Date.now()
-    await sqlEnhanced("SELECT 1 as test")
+    await sqlEnhanced`SELECT 1 as test`
     const responseTime = Date.now() - startTime
 
     // Check if required tables exist
@@ -341,19 +341,19 @@ export function validateJobData(jobData: any): ValidationResult {
 export async function withTransaction<T>(operations: (client: NeonQueryFunction<any>) => Promise<T>): Promise<T> {
   try {
     // Start transaction
-    await sqlEnhanced("BEGIN")
+    await sqlEnhanced`BEGIN`
     
     try {
       // Execute operations
       const result = await operations(sql)
       
       // Commit transaction
-      await sqlEnhanced("COMMIT")
+      await sqlEnhanced`COMMIT`
       return result
     } catch (error) {
       // Rollback on error
       console.error("Transaction error, rolling back:", error)
-      await sqlEnhanced("ROLLBACK")
+      await sqlEnhanced`ROLLBACK`
       throw error
     }
   } catch (error) {
