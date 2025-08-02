@@ -870,34 +870,14 @@ export class BLSSyncService extends EventEmitter {
    * Load occupation codes from database or initialize with defaults
    */
   private async loadOccupationCodes(): Promise<void> {
-    try {
-      // First try to load from database
-      const results = await sqlEnhanced<{ occ_code: string; occ_title: string }>`
-        SELECT occ_code, occ_title FROM job_codes ORDER BY occ_code
-      `
-
-      if (results.length > 0) {
-        this.occupationCodes = results.map((row) => row.occ_code)
-        
-        // Create title mapping
-        this.occupationTitles = {}
-        results.forEach((row) => {
-          this.occupationTitles[row.occ_code] = row.occ_title
-        })
-        
-        console.log(`📋 Loaded ${this.occupationCodes.length} occupation codes from database`)
-        return
-      }
-
-      // If no codes in database, use default list
-      console.log("⚠️ No occupation codes found in database, using default list")
-      this.initializeDefaultOccupationCodes()
-    } catch (error) {
-      console.error("Error loading occupation codes:", error)
-      
-      // Fallback to default list
-      this.initializeDefaultOccupationCodes()
-    }
+    /*
+     * Previously this method attempted to read from a `job_codes` table that is
+     * no longer part of the schema.  Instead, we now always fall back to our
+     * baked-in Standard Occupational Classification (SOC) list.  This keeps the
+     * logic simple and avoids a failing query on a non-existent table.
+     */
+    console.log("📋 Loading BLS occupation codes from standard SOC list")
+    this.initializeDefaultOccupationCodes()
   }
 
   /**
