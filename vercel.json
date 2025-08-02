@@ -17,21 +17,6 @@
       "maxDuration": 300
     }
   },
-  "env": {
-    "DATABASE_URL": {
-      "required": true
-    },
-    "BLS_API_KEY": {
-      "required": true
-    },
-    "BLS_API_KEY_2": {
-      "required": false
-    },
-    "BLS_API_KEY_3": {
-      "required": false
-    },
-    "NODE_ENV": "production"
-  },
   "routes": [
     {
       "src": "/api/(.*)",
