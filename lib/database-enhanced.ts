@@ -50,7 +50,9 @@ export interface ValidationResult {
 
 // Default database configuration
 export const dbConfig: DatabaseConfig = {
-  connectionTimeoutMillis: 10000, // 10 seconds
+  // Shorter connection timeout is better in serverless functions where
+  // cold-starts or network glitches need quick retries.
+  connectionTimeoutMillis: 3000, // 3 seconds
   idleTimeoutMillis: 30000, // 30 seconds
   max: 20, // Maximum number of connections in pool
   retryAttempts: 5,
@@ -165,9 +167,15 @@ export async function sqlEnhanced<T = any>(
               errorMsg.includes("connection") ||
               errorMsg.includes("timeout") ||
               errorMsg.includes("socket") ||
-              errorMsg.includes("network")
+              errorMsg.includes("network") ||
+              errorMsg.includes("fetch failed") ||
+              errorMsg.includes("und_err_socket") ||
+              errorMsg.includes("other side closed")
             ) {
-              throw new RetryableError(`Database connection error: ${error.message}`)
+              // Very small delay (0.2s) to allow an almost-immediate retry,
+              // which is often enough to recover from transient Neon ↔︎ Vercel
+              // connection drops.
+              throw new RetryableError(`Database connection error: ${error.message}`, 0.2)
             }
             
             // Lock or deadlock errors - retryable

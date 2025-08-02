@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
-import { sql, testDatabaseConnection } from "@/lib/database"
+// `testConnection` is the correct export from "@/lib/database", not
+// `testDatabaseConnection` – this fixes the build-time import error.
+import { sql, testConnection } from "@/lib/database"
 
 // Comprehensive list of BLS occupation codes (SOC codes)
 const occupationCodes = [
@@ -480,7 +482,7 @@ export async function POST(request: Request) {
     console.log("Action:", action)
 
     // Test database connection first
-    const connectionTest = await testDatabaseConnection()
+    const connectionTest = await testConnection()
     if (!connectionTest.success) {
       return NextResponse.json(
         {

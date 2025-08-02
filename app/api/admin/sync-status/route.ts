@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { BLSSyncService } from "@/lib/bls-sync-enhanced"
 
+// Force this route to be treated as dynamic at build time
+export const dynamic = "force-dynamic"
+
 // Global sync state for legacy system (in production, use Redis or database)
 const syncState = {
   isRunning: false,

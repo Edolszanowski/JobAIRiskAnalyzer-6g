@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { sqlEnhanced } from "@/lib/database-enhanced"
 
+// Tell Next.js this route **must** be rendered dynamically at runtime
+export const dynamic = "force-dynamic"
+
 // Types for job data
 interface Job {
   occ_code: string

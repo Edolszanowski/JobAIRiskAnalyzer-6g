@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 import { sqlEnhanced } from "@/lib/database-enhanced"
 
 // Type definition for job suggestions
+// Force this route to be treated as dynamic at build time so Next.js
+// doesn’t attempt to statically prerender it (it relies on `request.url`).
+export const dynamic = "force-dynamic"
+
 interface JobSuggestion {
   occ_code: string
   occ_title: string

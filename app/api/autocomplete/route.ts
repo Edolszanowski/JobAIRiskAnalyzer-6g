@@ -3,6 +3,11 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
+// Force this route to be treated as dynamic at build time to avoid
+// Next.js DynamicServerError when `request.url` is used during static
+// generation. This tells Next.js not to attempt to prerender the route.
+export const dynamic = "force-dynamic"
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)

@@ -3,6 +3,10 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
+// Tell Next.js this endpoint is always dynamic (prevents DynamicServerError
+// during static generation when `request.url` is accessed).
+export const dynamic = "force-dynamic"
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
