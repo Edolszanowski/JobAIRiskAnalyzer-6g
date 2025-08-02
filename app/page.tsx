@@ -1,11 +1,25 @@
+/* eslint-disable react-hooks/rules-of-hooks */
+"use client"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, TrendingUp, AlertTriangle, Users, DollarSign } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 export default function HomePage() {
+  const router = useRouter()
+  const [searchTerm, setSearchTerm] = useState("")
+
+  // helpers
+  const handleSearch = () => {
+    if (searchTerm.trim() === "") return
+    router.push(`/jobs?search=${encodeURIComponent(searchTerm.trim())}`)
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
@@ -43,9 +57,19 @@ export default function HomePage() {
               <Input
                 type="text"
                 placeholder="Search for a job title (e.g., Software Developer, Teacher, Nurse)"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearch()
+                }}
                 className="pl-10 pr-4 py-3 text-lg"
               />
-              <Button className="absolute right-2 top-1/2 transform -translate-y-1/2">Search</Button>
+              <Button
+                className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                onClick={handleSearch}
+              >
+                Search
+              </Button>
             </div>
           </div>
 
@@ -113,7 +137,11 @@ export default function HomePage() {
                     <Badge variant="destructive">85% Risk</Badge>
                   </div>
                 </div>
-                <Button variant="outline" className="w-full bg-transparent">
+                <Button
+                  variant="outline"
+                  className="w-full bg-transparent"
+                  onClick={() => router.push("/jobs?risk=high")}
+                >
                   View All High-Risk Jobs
                 </Button>
               </CardContent>
@@ -143,7 +171,11 @@ export default function HomePage() {
                     <Badge variant="secondary">25% Risk</Badge>
                   </div>
                 </div>
-                <Button variant="outline" className="w-full bg-transparent">
+                <Button
+                  variant="outline"
+                  className="w-full bg-transparent"
+                  onClick={() => router.push("/jobs?risk=safe")}
+                >
                   View All Safe Jobs
                 </Button>
               </CardContent>
@@ -173,7 +205,13 @@ export default function HomePage() {
                     <Badge className="bg-blue-100 text-blue-800">+35%</Badge>
                   </div>
                 </div>
-                <Button variant="outline" className="w-full bg-transparent">
+                <Button
+                  variant="outline"
+                  className="w-full bg-transparent"
+                  onClick={() =>
+                    router.push("/jobs?sort=employment_change_percent&order=desc")
+                  }
+                >
                   View All Growing Jobs
                 </Button>
               </CardContent>
@@ -191,10 +229,15 @@ export default function HomePage() {
             intelligence.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" className="px-8">
+            <Button size="lg" className="px-8" onClick={() => router.push("/analyze")}>
               Analyze My Job
             </Button>
-            <Button size="lg" variant="outline" className="px-8 bg-transparent">
+            <Button
+              size="lg"
+              variant="outline"
+              className="px-8 bg-transparent"
+              onClick={() => router.push("/jobs")}
+            >
               Browse All Jobs
             </Button>
           </div>
