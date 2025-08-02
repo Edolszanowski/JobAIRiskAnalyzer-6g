@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
+import { BLSSyncService } from "@/lib/bls-sync-enhanced"
 
 const sql = neon(process.env.DATABASE_URL!)
 
@@ -15,8 +16,61 @@ const syncState = {
   lastUpdated: new Date().toISOString(),
 }
 
-export async function POST() {
+// Singleton instance of enhanced sync service
+let enhancedSyncService: BLSSyncService | null = null
+
+// Get or create enhanced sync service
+function getEnhancedSyncService(): BLSSyncService {
+  if (!enhancedSyncService) {
+    // Get API keys from environment variables
+    const apiKeys = [
+      process.env.BLS_API_KEY,
+      process.env.BLS_API_KEY_2,
+      process.env.BLS_API_KEY_3,
+    ].filter(Boolean) as string[]
+
+    if (apiKeys.length === 0) {
+      throw new Error("No BLS API keys configured. Please set BLS_API_KEY environment variable.")
+    }
+
+    // Create new sync service instance
+    enhancedSyncService = new BLSSyncService(apiKeys)
+    console.log(`🔄 Enhanced BLS Sync Service initialized with ${apiKeys.length} API keys`)
+  }
+
+  return enhancedSyncService
+}
+
+export async function POST(request: Request) {
   try {
+    // Check if enhanced sync is requested
+    const url = new URL(request.url)
+    const useEnhanced = url.searchParams.get("enhanced") === "true"
+    
+    // Parse request body for configuration options
+    let config = {}
+    let forceRestart = false
+    
+    try {
+      const body = await request.json()
+      config = {
+        maxConcurrent: body.maxConcurrent || 5,
+        batchSize: body.batchSize || 50,
+        retryAttempts: body.retryAttempts || 3,
+        validateData: body.validateData !== false, // Default to true
+      }
+      forceRestart = body.forceRestart === true
+    } catch (error) {
+      // If body parsing fails, use default config
+      console.log("No request body provided, using default configuration")
+    }
+
+    // If enhanced mode is requested, use the enhanced sync service
+    if (useEnhanced) {
+      return await handleEnhancedSync(config, forceRestart)
+    }
+
+    // Otherwise, use the legacy sync implementation
     if (syncState.isRunning) {
       return NextResponse.json({
         success: false,
@@ -75,6 +129,84 @@ export async function POST() {
       },
       { status: 500 },
     )
+  }
+}
+
+/**
+ * Handle enhanced sync using the BLSSyncService
+ */
+async function handleEnhancedSync(config: any, forceRestart: boolean) {
+  try {
+    // Get enhanced sync service
+    const syncService = getEnhancedSyncService()
+    
+    // Check if sync is already running
+    const currentProgress = syncService.getSyncProgress()
+    if (currentProgress.isRunning && !forceRestart) {
+      // Map enhanced progress to legacy format for backward compatibility
+      const legacyFormat = mapToLegacyFormat(currentProgress)
+      
+      return NextResponse.json({
+        success: false,
+        message: "Enhanced sync is already running. Use forceRestart=true to restart.",
+        syncState: legacyFormat,
+        enhancedSync: true,
+      })
+    }
+    
+    // Start sync process (don't await - let it run in background)
+    const syncPromise = syncService.startSync(forceRestart)
+    
+    // Get initial progress for response
+    const initialProgress = syncService.getSyncProgress()
+    const legacyFormat = mapToLegacyFormat(initialProgress)
+    
+    return NextResponse.json({
+      success: true,
+      message: forceRestart 
+        ? "Enhanced sync started with forced restart" 
+        : "Enhanced sync started",
+      syncState: legacyFormat,
+      enhancedSync: true,
+      config,
+    })
+  } catch (error) {
+    console.error("Error starting enhanced sync:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to start enhanced sync",
+        error: error instanceof Error ? error.message : "Unknown error",
+        syncState,
+        enhancedSync: true,
+      },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Map enhanced sync progress to legacy format for backward compatibility
+ */
+function mapToLegacyFormat(enhancedProgress: any) {
+  return {
+    isRunning: enhancedProgress.isRunning,
+    totalJobs: enhancedProgress.totalJobs,
+    processedJobs: enhancedProgress.processedJobs,
+    successfulJobs: enhancedProgress.successfulJobs,
+    failedJobs: enhancedProgress.failedJobs,
+    skippedJobs: enhancedProgress.skippedJobs || 0,
+    currentJob: enhancedProgress.currentJob || null,
+    startTime: enhancedProgress.startTime ? new Date(enhancedProgress.startTime) : null,
+    lastUpdated: enhancedProgress.lastUpdated,
+    // Include enhanced properties with different names to avoid conflicts
+    enhancedDetails: {
+      currentBatch: enhancedProgress.currentBatch,
+      totalBatches: enhancedProgress.totalBatches,
+      estimatedTimeRemaining: enhancedProgress.estimatedTimeRemaining,
+      checkpoints: enhancedProgress.checkpoints,
+    },
+    apiKeysStatus: enhancedProgress.apiKeysStatus,
   }
 }
 
@@ -230,9 +362,48 @@ function getJobTitle(code: string): string {
   return titles[code] || `Occupation ${code}`
 }
 
-export async function GET() {
-  return NextResponse.json({
-    success: true,
-    syncState,
-  })
+export async function GET(request: Request) {
+  try {
+    // Check if enhanced sync is requested
+    const url = new URL(request.url)
+    const useEnhanced = url.searchParams.get("enhanced") === "true"
+    
+    // If enhanced mode is requested, use the enhanced sync service
+    if (useEnhanced) {
+      try {
+        const syncService = getEnhancedSyncService()
+        const enhancedProgress = syncService.getSyncProgress()
+        const legacyFormat = mapToLegacyFormat(enhancedProgress)
+        
+        return NextResponse.json({
+          success: true,
+          syncState: legacyFormat,
+          enhancedSync: true,
+        })
+      } catch (error) {
+        console.error("Error getting enhanced sync status:", error)
+        return NextResponse.json({
+          success: false,
+          message: "Failed to get enhanced sync status",
+          error: error instanceof Error ? error.message : "Unknown error",
+          syncState,
+          enhancedSync: true,
+        })
+      }
+    }
+    
+    // Otherwise, use legacy sync state
+    return NextResponse.json({
+      success: true,
+      syncState,
+    })
+  } catch (error) {
+    console.error("Error getting sync status:", error)
+    return NextResponse.json({
+      success: false,
+      message: "Failed to get sync status",
+      error: error instanceof Error ? error.message : "Unknown error",
+      syncState,
+    })
+  }
 }
