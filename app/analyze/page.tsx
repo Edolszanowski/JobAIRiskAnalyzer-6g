@@ -3,11 +3,10 @@
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { JobSearchInput } from "@/components/ui/job-search-input"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Search,
   AlertTriangle,
   TrendingUp,
   DollarSign,
@@ -32,36 +31,25 @@ interface Job {
 
 export default function AnalyzePage() {
   // State management
-  const [searchTerm, setSearchTerm] = useState("")
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
 
-  // Handle job search
-  const handleSearch = async () => {
-    if (searchTerm.trim() === "") return
-    
+  // Handle selection from auto-complete
+  const handleSelect = async (suggestion: { occ_code: string; occ_title: string }) => {
     setLoading(true)
     setError(null)
     setHasSearched(true)
-    
+
     try {
-      const response = await fetch(`/api/jobs?search=${encodeURIComponent(searchTerm)}&limit=10`)
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      if (!data.success) {
-        throw new Error(data.error || "Failed to fetch jobs")
-      }
-      
-      setJobs(data.jobs)
+      const res = await fetch(`/api/jobs/${suggestion.occ_code}`)
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || "Failed to fetch job")
+      setJobs([data.job])
     } catch (err) {
-      console.error("Error searching jobs:", err)
+      console.error("Error fetching job:", err)
       setError(err instanceof Error ? err.message : "Unknown error occurred")
       setJobs([])
     } finally {
@@ -161,35 +149,20 @@ export default function AnalyzePage() {
 
         {/* Search Form */}
         <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-sm mb-12">
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">Find Your Occupation</h3>
-            <p className="text-gray-600">
-              Enter your job title to see its automation risk score, salary data, and growth projections.
-            </p>
-          </div>
-          
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <Input
-                type="text"
-                placeholder="Job title (e.g., Software Developer, Nurse, Teacher)"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch()
-                }}
-                className="pl-10 py-6 text-lg"
-              />
-            </div>
-            <Button 
-              size="lg" 
-              onClick={handleSearch}
-              disabled={loading || searchTerm.trim() === ""}
-            >
-              Analyze
-            </Button>
-          </div>
+        <div className="mb-6">
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Find Your Occupation</h3>
+          <p className="text-gray-600">
+            Start typing your job title and select the correct occupation to analyze.
+          </p>
+        </div>
+
+        <JobSearchInput
+          placeholder="Job title (e.g., Software Developer, Nurse, Teacher)"
+          onSelect={handleSelect}
+          inputClassName="py-6 text-lg"
+          autoFocus
+          disabled={loading}
+        />
         </div>
 
         {/* Error State */}
@@ -200,7 +173,12 @@ export default function AnalyzePage() {
             <Button 
               variant="outline" 
               className="mt-4"
-              onClick={() => handleSearch()}
+              onClick={() => {
+                // simple retry – reset error and search state
+                setError(null)
+                setHasSearched(false)
+                setJobs([])
+              }}
             >
               Try Again
             </Button>
@@ -239,10 +217,19 @@ export default function AnalyzePage() {
           <div className="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-sm text-center mb-8">
             <h3 className="text-xl font-semibold text-gray-700 mb-2">No matching jobs found</h3>
             <p className="text-gray-500 mb-4">
-              We couldn't find any occupations matching "{searchTerm}". Try using different keywords or browse all jobs.
+              We couldn't find any occupations matching your search. Try using different keywords or browse all jobs.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button onClick={() => setSearchTerm("")}>Try Different Search</Button>
+              <Button
+                onClick={() => {
+                  // reset search state so user can start over
+                  setJobs([])
+                  setHasSearched(false)
+                  setError(null)
+                }}
+              >
+                Try Different Search
+              </Button>
               <Link href="/jobs">
                 <Button variant="outline" className="bg-transparent">Browse All Jobs</Button>
               </Link>

@@ -4,21 +4,16 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+// New auto-complete search input
+import { JobSearchInput } from "@/components/ui/job-search-input"
 import { Search, TrendingUp, AlertTriangle, Users, DollarSign } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+// local state for this page no longer needed
 
 export default function HomePage() {
   const router = useRouter()
-  const [searchTerm, setSearchTerm] = useState("")
 
-  // helpers
-  const handleSearch = () => {
-    if (searchTerm.trim() === "") return
-    router.push(`/jobs?search=${encodeURIComponent(searchTerm.trim())}`)
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -50,27 +45,13 @@ export default function HomePage() {
             occupations based on Bureau of Labor Statistics data.
           </p>
 
-          {/* Search Bar */}
+          {/* Search Bar with Auto-complete */}
           <div className="max-w-2xl mx-auto mb-12">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-              <Input
-                type="text"
-                placeholder="Search for a job title (e.g., Software Developer, Teacher, Nurse)"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch()
-                }}
-                className="pl-10 pr-4 py-3 text-lg"
-              />
-              <Button
-                className="absolute right-2 top-1/2 transform -translate-y-1/2"
-                onClick={handleSearch}
-              >
-                Search
-              </Button>
-            </div>
+            <JobSearchInput
+              placeholder="Search for a job title (e.g., Software Developer, Teacher, Nurse)"
+              onSelect={(job) => router.push(`/jobs/${job.occ_code}`)}
+              inputClassName="py-3 text-lg"
+            />
           </div>
 
           {/* Quick Stats */}

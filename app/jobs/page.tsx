@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { JobSearchInput } from "@/components/ui/job-search-input"
 import {
   Select,
   SelectContent,
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, TrendingUp, AlertTriangle, ArrowUpDown, ChevronLeft, ChevronRight, DollarSign } from "lucide-react"
+import { TrendingUp, AlertTriangle, ArrowUpDown, ChevronLeft, ChevronRight, DollarSign } from "lucide-react"
 import Link from "next/link"
 
 // Job data type definition
@@ -61,11 +61,6 @@ export default function JobsPage() {
     limit: 20,
     totalPages: 0,
   })
-  
-  // Search state
-  const [searchTerm, setSearchTerm] = useState("")
-  
-  // Router and URL parameters
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -76,12 +71,7 @@ export default function JobsPage() {
   const order = searchParams.get("order") || "desc"
   const page = parseInt(searchParams.get("page") || "1", 10)
   
-  // Set initial search term from URL
-  useEffect(() => {
-    if (search) {
-      setSearchTerm(search)
-    }
-  }, [search])
+
   
   // Fetch jobs data
   useEffect(() => {
@@ -146,11 +136,6 @@ export default function JobsPage() {
     
     // Navigate to the new URL
     router.push(`/jobs?${params.toString()}`)
-  }
-  
-  const handleSearch = () => {
-    if (searchTerm.trim() === "" && !search) return
-    updateFilters({ search: searchTerm.trim() || null })
   }
   
   const handleRiskFilter = (riskLevel: string) => {
@@ -245,21 +230,11 @@ export default function JobsPage() {
         <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
           <div className="flex flex-col md:flex-row gap-4 mb-6">
             <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <Input
-                  type="text"
-                  placeholder="Search job titles..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSearch()
-                  }}
-                  className="pl-10"
-                />
-              </div>
+              <JobSearchInput
+                placeholder="Search job titles..."
+                onSelect={(job) => router.push(`/jobs/${job.occ_code}`)}
+              />
             </div>
-            <Button onClick={handleSearch}>Search</Button>
           </div>
 
           <div className="flex flex-wrap gap-3 mb-6">
