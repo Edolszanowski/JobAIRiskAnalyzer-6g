@@ -38,10 +38,15 @@ export class BLSService {
   private dailyLimit = 500
   private keyStatuses: Map<string, APIKeyStatus>
   private currentKeyIndex = 0
+  private validationInProgress = false
+  private validationQueue: string[] = []
 
   constructor(apiKeys: string | string[]) {
     // Support both single key and array of keys
-    this.apiKeys = Array.isArray(apiKeys) ? apiKeys : [apiKeys]
+    const initialKeys = Array.isArray(apiKeys) ? apiKeys : [apiKeys]
+    
+    // Filter out empty keys
+    this.apiKeys = initialKeys.filter(key => key && key.trim().length > 0)
     this.keyStatuses = new Map()
 
     // Initialize status for each API key
@@ -55,6 +60,105 @@ export class BLSService {
     })
 
     console.log(`🔑 BLS Service initialized with ${this.apiKeys.length} API key(s)`)
+    
+    // Start async validation of keys
+    this.validateAllApiKeys()
+  }
+
+  /**
+   * Validates all API keys and removes invalid ones
+   * This runs asynchronously to avoid blocking initialization
+   */
+  private async validateAllApiKeys(): Promise<void> {
+    if (this.validationInProgress) return
+    
+    this.validationInProgress = true
+    console.log(`🔍 Starting validation of ${this.apiKeys.length} BLS API keys...`)
+    
+    const validKeys: string[] = []
+    const invalidKeys: string[] = []
+    
+    // Test each key
+    for (const key of this.apiKeys) {
+      try {
+        const isValid = await this.validateApiKey(key)
+        if (isValid) {
+          validKeys.push(key)
+          console.log(`✅ API key validated: ${key.substring(0, 4)}...`)
+        } else {
+          invalidKeys.push(key)
+          console.log(`❌ Invalid API key detected: ${key.substring(0, 4)}...`)
+        }
+      } catch (error) {
+        invalidKeys.push(key)
+        console.error(`❌ Error validating API key ${key.substring(0, 4)}...`, error)
+      }
+    }
+    
+    // Remove invalid keys
+    for (const key of invalidKeys) {
+      this.removeApiKey(key)
+    }
+    
+    this.validationInProgress = false
+    console.log(`🔑 API key validation complete. ${validKeys.length} valid, ${invalidKeys.length} invalid.`)
+    
+    // Process any keys that were queued during validation
+    while (this.validationQueue.length > 0) {
+      const key = this.validationQueue.shift()
+      if (key) this.addApiKey(key)
+    }
+  }
+  
+  /**
+   * Validates a single API key by making a test request
+   * @param key API key to validate
+   * @returns Promise resolving to true if valid, false otherwise
+   */
+  private async validateApiKey(key: string): Promise<boolean> {
+    try {
+      // Use a simple test series that should always exist
+      const testSeriesId = 'CEU0000000001' // Total nonfarm employment
+      
+      const response = await fetch(this.baseUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          seriesid: [testSeriesId],
+          startyear: "2023",
+          endyear: "2023",
+          registrationkey: key,
+        }),
+        // Short timeout for validation
+        signal: AbortSignal.timeout(5000)
+      })
+      
+      if (!response.ok) {
+        return false
+      }
+      
+      const data: BLSApiResponse = await response.json()
+      
+      // Check if the request was successful
+      if (data.status !== "REQUEST_SUCCEEDED") {
+        // Check for specific error messages indicating invalid key
+        if (data.message.some(msg => 
+          msg.includes("invalid") || 
+          msg.includes("Invalid key") || 
+          msg.includes("provided by the User is invalid")
+        )) {
+          return false
+        }
+      }
+      
+      return data.status === "REQUEST_SUCCEEDED"
+    } catch (error) {
+      console.error(`Error validating API key: ${error instanceof Error ? error.message : String(error)}`)
+      // Don't mark as invalid on network errors - could be temporary
+      return true
+    }
   }
 
   private resetDailyCountsIfNeeded(): void {
@@ -175,6 +279,16 @@ export class BLSService {
             await this.delay(2000)
             return this.fetchEmploymentData(seriesId, retryCount + 1)
           }
+        } else if (data.message.some((msg) => msg.includes("invalid") || msg.includes("Invalid key"))) {
+          // Invalid key detected during normal operation
+          console.log(`❌ Invalid API key detected during request: ${availableKey.substring(0, 8)}...`)
+          this.removeApiKey(availableKey)
+          
+          if (retryCount < maxRetries) {
+            console.log(`⏳ Invalid key removed, retrying with different key...`)
+            await this.delay(1000)
+            return this.fetchEmploymentData(seriesId, retryCount + 1)
+          }
         }
         throw new Error(`BLS API request failed: ${data.message.join(", ")}`)
       }
@@ -282,15 +396,36 @@ export class BLSService {
 
   // Add a new API key dynamically
   addApiKey(newKey: string): void {
+    if (!newKey || newKey.trim().length === 0) {
+      console.log(`⚠️ Attempted to add empty API key, ignoring`)
+      return
+    }
+    
+    if (this.validationInProgress) {
+      // Queue the key for validation later
+      this.validationQueue.push(newKey)
+      console.log(`⏳ API key queued for validation: ${newKey.substring(0, 4)}...`)
+      return
+    }
+    
     if (!this.apiKeys.includes(newKey)) {
-      this.apiKeys.push(newKey)
-      this.keyStatuses.set(newKey, {
-        key: newKey,
-        requestsUsed: 0,
-        lastResetDate: new Date().toDateString(),
-        isBlocked: false,
+      // Start async validation
+      this.validateApiKey(newKey).then(isValid => {
+        if (isValid) {
+          this.apiKeys.push(newKey)
+          this.keyStatuses.set(newKey, {
+            key: newKey,
+            requestsUsed: 0,
+            lastResetDate: new Date().toDateString(),
+            isBlocked: false,
+          })
+          console.log(`➕ Added new API key: ${newKey.substring(0, 4)}...`)
+        } else {
+          console.log(`❌ Rejected invalid API key: ${newKey.substring(0, 4)}...`)
+        }
+      }).catch(error => {
+        console.error(`Error validating new API key: ${error instanceof Error ? error.message : String(error)}`)
       })
-      console.log(`➕ Added new API key: ${newKey.substring(0, 8)}...`)
     }
   }
 
@@ -300,7 +435,12 @@ export class BLSService {
     if (index > -1) {
       this.apiKeys.splice(index, 1)
       this.keyStatuses.delete(keyToRemove)
-      console.log(`➖ Removed API key: ${keyToRemove.substring(0, 8)}...`)
+      console.log(`➖ Removed API key: ${keyToRemove.substring(0, 4)}...`)
     }
+  }
+  
+  // Get the count of valid API keys
+  getValidKeyCount(): number {
+    return this.apiKeys.length
   }
 }
