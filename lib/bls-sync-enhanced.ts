@@ -1579,4 +1579,4 @@ export class BLSSyncService extends EventEmitter {
       "13-1031": "Claims Adjusters, Examiners, and Investigators",
       "13-1041": "Compliance Officers",
       "13-1051": "Cost Estimators",
-      "13-1071": "Human Resources
+      "13-1071": "Human Resources",
