@@ -1579,4 +1579,127 @@ export class BLSSyncService extends EventEmitter {
       "13-1031": "Claims Adjusters, Examiners, and Investigators",
       "13-1041": "Compliance Officers",
       "13-1051": "Cost Estimators",
-      "13-1071": "Human Resources
+      "13-1071": "Human Resources",
+      "13-2011": "Accountants and Auditors",
+      "15-1211": "Computer Systems Analysts", 
+      "15-1252": "Software Developers",
+      "15-1253": "Software Quality Assurance Analysts and Testers",
+      "17-1011": "Architects, Except Landscape and Naval",
+      "23-1011": "Lawyers",
+      "25-2021": "Elementary School Teachers, Except Special Education",
+      "29-1141": "Registered Nurses",
+      "33-3051": "Police and Sheriff's Patrol Officers",
+      "35-3031": "Waiters and Waitresses",
+      "41-2031": "Retail Salespersons",
+      "43-3031": "Bookkeeping, Accounting, and Auditing Clerks",
+      "43-4051": "Customer Service Representatives",
+      "47-2111": "Electricians"
+    }
+
+    console.log(`🔄 Initialized with ${this.occupationCodes.length} occupation codes`)
+  }
+
+  // ========== PROGRESS UPDATES ==========
+
+  private startProgressUpdates(): void {
+    if (this.progressUpdateInterval) {
+      this.stopProgressUpdates()
+    }
+    this.progressUpdateInterval = setInterval(() => {
+      this.updateProgress()
+    }, this.config.progressUpdateIntervalMs)
+  }
+
+  private stopProgressUpdates(): void {
+    if (this.progressUpdateInterval) {
+      clearInterval(this.progressUpdateInterval)
+      this.progressUpdateInterval = null
+    }
+  }
+
+  private updateProgress(): void {
+    this.syncProgress.lastUpdated = new Date().toISOString()
+    this.emit("progress", this.getSyncProgress())
+  }
+
+  private startHealthCheck(): void {
+    if (this.healthCheckInterval) this.stopHealthCheck()
+    this.healthCheckInterval = setInterval(() => this.checkHealth(), this.config.healthCheckIntervalMs)
+  }
+
+  private stopHealthCheck(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval)
+      this.healthCheckInterval = null
+    }
+  }
+
+  private checkHealth(): void {
+    const remainingRequests = this.blsService.getTotalRemainingRequests()
+    if (remainingRequests < 10) {
+      console.warn(`⚠️ Low API requests remaining: ${remainingRequests}`)
+      this.emit("healthWarning", { type: "lowApiRequests", remainingRequests })
+    }
+  }
+
+  private createCheckpoint(): void {
+    const checkpoint: SyncCheckpoint = {
+      timestamp: new Date().toISOString(),
+      processedJobs: this.syncProgress.processedJobs,
+      successfulJobs: this.syncProgress.successfulJobs,
+      failedJobs: this.syncProgress.failedJobs,
+      lastProcessedCode: this.syncProgress.currentJob,
+      batchNumber: this.syncProgress.currentBatch || 0,
+    }
+    this.syncProgress.checkpoints.push(checkpoint)
+    if (this.syncProgress.checkpoints.length > 10) {
+      this.syncProgress.checkpoints = this.syncProgress.checkpoints.slice(-10)
+    }
+  }
+
+  private resetSyncProgress(): void {
+    this.syncProgress = {
+      isRunning: false,
+      totalJobs: 0,
+      processedJobs: 0,
+      successfulJobs: 0,  
+      failedJobs: 0,
+      skippedJobs: 0,
+      startTime: null,
+      endTime: null,
+      lastUpdated: new Date().toISOString(),
+      checkpoints: [],
+      apiKeysStatus: {
+        totalKeys: 0,
+        totalDailyLimit: 0,
+        totalRemainingRequests: 0,
+        keyStatuses: [],
+      },
+    }
+  }
+
+  private prepareToResume(): void {
+    if (this.syncProgress.checkpoints.length === 0) {
+      this.resetSyncProgress()
+      return
+    }
+    const lastCheckpoint = this.syncProgress.checkpoints[this.syncProgress.checkpoints.length - 1]
+    this.syncProgress.processedJobs = lastCheckpoint.processedJobs
+    this.syncProgress.successfulJobs = lastCheckpoint.successfulJobs
+    this.syncProgress.failedJobs = lastCheckpoint.failedJobs
+    this.syncProgress.currentBatch = lastCheckpoint.batchNumber
+  }
+
+  private recordProcessingTime(timeMs: number): void {
+    this.lastProcessingTime.push(timeMs)
+    if (this.lastProcessingTime.length > 50) {
+      this.lastProcessingTime.shift()
+    }
+  }
+
+  private getAverageProcessingTime(): number {
+    if (this.lastProcessingTime.length === 0) return 1000
+    const sum = this.lastProcessingTime.reduce((acc, time) => acc + time, 0)
+    return sum / this.lastProcessingTime.length
+  }
+}
