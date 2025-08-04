@@ -1,5 +1,10 @@
 "use client"
 
+// Prevent static generation & caching. This guarantees the route is rendered
+// fresh on every request and then immediately taken over by client-only logic,
+// avoiding any potential mismatch with pre-generated HTML.
+export const dynamic = "force-dynamic"
+
 import { useState, useEffect } from "react"
 import { Loader2 } from "lucide-react"
 
