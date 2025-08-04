@@ -32,6 +32,14 @@ interface APIKeyStatus {
   blockUntil?: Date
 }
 
+// Network error tracking for circuit breaker pattern
+interface NetworkErrorTracker {
+  consecutiveErrors: number
+  lastErrorTime: Date | null
+  isCircuitOpen: boolean
+  resetTime: Date | null
+}
+
 export class BLSService {
   private apiKeys: string[]
   private baseUrl = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
@@ -40,6 +48,22 @@ export class BLSService {
   private currentKeyIndex = 0
   private validationInProgress = false
   private validationQueue: string[] = []
+  
+  // Circuit breaker settings
+  private networkErrorTracker: NetworkErrorTracker = {
+    consecutiveErrors: 0,
+    lastErrorTime: null,
+    isCircuitOpen: false,
+    resetTime: null
+  }
+  private circuitBreakerThreshold = 5 // Number of consecutive errors before opening circuit
+  private circuitResetTimeMs = 60000 // 1 minute timeout before trying again
+  
+  // Fetch configuration
+  private defaultTimeout = 30000 // 30 seconds
+  private maxRetries = 5
+  private initialBackoffMs = 1000
+  private maxBackoffMs = 30000
 
   constructor(apiKeys: string | string[]) {
     // Support both single key and array of keys
@@ -120,10 +144,12 @@ export class BLSService {
       // Use a simple test series that should always exist
       const testSeriesId = 'CEU0000000001' // Total nonfarm employment
       
-      const response = await fetch(this.baseUrl, {
+      const response = await this.fetchWithTimeout(this.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Connection": "keep-alive",
+          "Keep-Alive": "timeout=10, max=5"
         },
         body: JSON.stringify({
           seriesid: [testSeriesId],
@@ -132,7 +158,7 @@ export class BLSService {
           registrationkey: key,
         }),
         // Short timeout for validation
-        signal: AbortSignal.timeout(5000)
+        timeout: 5000
       })
       
       if (!response.ok) {
@@ -158,6 +184,63 @@ export class BLSService {
       console.error(`Error validating API key: ${error instanceof Error ? error.message : String(error)}`)
       // Don't mark as invalid on network errors - could be temporary
       return true
+    }
+  }
+
+  /**
+   * Utility method to fetch with timeout and proper error handling
+   * @param url The URL to fetch from
+   * @param options Fetch options
+   * @param timeout Timeout in milliseconds
+   * @returns Promise resolving to Response
+   */
+  private async fetchWithTimeout(
+    url: string, 
+    options: RequestInit & { timeout?: number } = {}
+  ): Promise<Response> {
+    const { timeout = this.defaultTimeout, ...fetchOptions } = options
+    
+    // Add connection pooling headers if not present
+    if (!fetchOptions.headers) {
+      fetchOptions.headers = {}
+    }
+    
+    const headers = fetchOptions.headers as Record<string, string>
+    if (!headers["Connection"]) {
+      headers["Connection"] = "keep-alive"
+    }
+    if (!headers["Keep-Alive"]) {
+      headers["Keep-Alive"] = "timeout=10, max=5"
+    }
+    
+    // Create abort controller for timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    
+    try {
+      const response = await fetch(url, {
+        ...fetchOptions,
+        signal: controller.signal
+      })
+      return response
+    } catch (error) {
+      // Check if it's a timeout error
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeout}ms`)
+      }
+      
+      // Check if it's a network error
+      if (error instanceof Error && 
+         (error.message.includes('ECONNRESET') || 
+          error.message.includes('network') ||
+          error.message.includes('fetch failed'))) {
+        throw new Error(`Network error: ${error.message}`)
+      }
+      
+      // Rethrow other errors
+      throw error
+    } finally {
+      clearTimeout(timeoutId)
     }
   }
 
@@ -220,8 +303,87 @@ export class BLSService {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
+  /**
+   * Check circuit breaker status and handle accordingly
+   * @returns True if circuit is closed (requests allowed), false if open
+   */
+  private checkCircuitBreaker(): boolean {
+    const now = new Date()
+    
+    // If circuit is open, check if it's time to try again
+    if (this.networkErrorTracker.isCircuitOpen) {
+      if (this.networkErrorTracker.resetTime && now > this.networkErrorTracker.resetTime) {
+        // Reset circuit breaker for a test request
+        console.log('🔌 Circuit half-open, allowing test request...')
+        return true
+      }
+      console.log('🚫 Circuit breaker open, blocking request')
+      return false
+    }
+    
+    return true
+  }
+  
+  /**
+   * Record a network error for circuit breaker tracking
+   */
+  private recordNetworkError(): void {
+    const now = new Date()
+    this.networkErrorTracker.consecutiveErrors++
+    this.networkErrorTracker.lastErrorTime = now
+    
+    // Check if we need to open the circuit
+    if (this.networkErrorTracker.consecutiveErrors >= this.circuitBreakerThreshold) {
+      this.networkErrorTracker.isCircuitOpen = true
+      this.networkErrorTracker.resetTime = new Date(now.getTime() + this.circuitResetTimeMs)
+      console.log(`🔌 Circuit breaker opened after ${this.networkErrorTracker.consecutiveErrors} consecutive errors. Will reset at ${this.networkErrorTracker.resetTime}`)
+    }
+  }
+  
+  /**
+   * Record a successful request to reset circuit breaker
+   */
+  private recordSuccess(): void {
+    // Reset error counter on success
+    if (this.networkErrorTracker.consecutiveErrors > 0) {
+      this.networkErrorTracker.consecutiveErrors = 0
+      console.log('✅ Network success, reset error counter')
+    }
+    
+    // If circuit was half-open, close it fully
+    if (this.networkErrorTracker.isCircuitOpen) {
+      this.networkErrorTracker.isCircuitOpen = false
+      this.networkErrorTracker.resetTime = null
+      console.log('🔌 Circuit breaker closed after successful request')
+    }
+  }
+
+  /**
+   * Calculate backoff time with exponential strategy
+   * @param retryCount Current retry attempt
+   * @returns Time to wait in milliseconds
+   */
+  private getBackoffTime(retryCount: number): number {
+    // Exponential backoff with jitter: 2^retry * base * (0.5-1.5 random factor)
+    const exponentialTime = Math.min(
+      this.maxBackoffMs,
+      this.initialBackoffMs * Math.pow(2, retryCount) * (0.5 + Math.random())
+    )
+    return exponentialTime
+  }
+
+  /**
+   * Fetch employment data from BLS API with enhanced error handling and retries
+   * @param seriesId BLS series ID to fetch
+   * @param retryCount Current retry attempt
+   * @returns Promise resolving to series data
+   */
   async fetchEmploymentData(seriesId: string, retryCount = 0): Promise<any> {
-    const maxRetries = 3
+    // Check circuit breaker first
+    if (!this.checkCircuitBreaker() && retryCount > 0) {
+      throw new Error('Network requests temporarily disabled due to persistent connection failures')
+    }
+    
     const availableKey = this.getNextAvailableKey()
 
     if (!availableKey) {
@@ -238,10 +400,14 @@ export class BLSService {
         `📡 Making request with key ${availableKey.substring(0, 8)}... (${status.requestsUsed}/${this.dailyLimit} used)`,
       )
 
-      const response = await fetch(this.baseUrl, {
+      // Use enhanced fetch with timeout
+      const response = await this.fetchWithTimeout(this.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Connection": "keep-alive",
+          "Keep-Alive": "timeout=10, max=5",
+          "User-Agent": "JobAIRiskAnalyzer/1.0"
         },
         body: JSON.stringify({
           seriesid: [seriesId],
@@ -249,6 +415,7 @@ export class BLSService {
           endyear: "2024",
           registrationkey: availableKey,
         }),
+        timeout: this.defaultTimeout
       })
 
       status.requestsUsed++
@@ -258,7 +425,7 @@ export class BLSService {
           // Rate limited or forbidden - mark key as blocked
           this.markKeyAsBlocked(availableKey, 60)
 
-          if (retryCount < maxRetries) {
+          if (retryCount < this.maxRetries) {
             console.log(`⏳ Rate limited, retrying with different key...`)
             await this.delay(2000) // Wait 2 seconds before retry
             return this.fetchEmploymentData(seriesId, retryCount + 1)
@@ -274,7 +441,7 @@ export class BLSService {
           // This key has hit its limit
           this.markKeyAsBlocked(availableKey, 60)
 
-          if (retryCount < maxRetries) {
+          if (retryCount < this.maxRetries) {
             console.log(`⏳ Key limit exceeded, retrying with different key...`)
             await this.delay(2000)
             return this.fetchEmploymentData(seriesId, retryCount + 1)
@@ -284,7 +451,7 @@ export class BLSService {
           console.log(`❌ Invalid API key detected during request: ${availableKey.substring(0, 8)}...`)
           this.removeApiKey(availableKey)
           
-          if (retryCount < maxRetries) {
+          if (retryCount < this.maxRetries) {
             console.log(`⏳ Invalid key removed, retrying with different key...`)
             await this.delay(1000)
             return this.fetchEmploymentData(seriesId, retryCount + 1)
@@ -293,14 +460,40 @@ export class BLSService {
         throw new Error(`BLS API request failed: ${data.message.join(", ")}`)
       }
 
+      // Record successful network request
+      this.recordSuccess()
+      
       // Add delay between successful requests to be respectful
       await this.delay(200)
 
       return data.Results.series[0]?.data || []
     } catch (error) {
-      if (retryCount < maxRetries && error instanceof Error && !error.message.includes("All API keys")) {
-        console.log(`🔄 Request failed, retrying... (${retryCount + 1}/${maxRetries})`)
-        await this.delay(1000 * (retryCount + 1)) // Exponential backoff
+      // Handle different types of errors
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      
+      // Check for network errors specifically
+      const isNetworkError = errorMessage.includes('ECONNRESET') || 
+                             errorMessage.includes('network') ||
+                             errorMessage.includes('fetch failed') ||
+                             errorMessage.includes('socket hang up') ||
+                             errorMessage.includes('timed out');
+      
+      if (isNetworkError) {
+        console.error(`🌐 Network error: ${errorMessage}`)
+        // Record network error for circuit breaker
+        this.recordNetworkError()
+        
+        // Retry with exponential backoff for network errors
+        if (retryCount < this.maxRetries) {
+          const backoffTime = this.getBackoffTime(retryCount)
+          console.log(`🔄 Network error, retrying in ${Math.round(backoffTime/1000)}s... (${retryCount + 1}/${this.maxRetries})`)
+          await this.delay(backoffTime)
+          return this.fetchEmploymentData(seriesId, retryCount + 1)
+        }
+      } else if (retryCount < this.maxRetries && !errorMessage.includes("All API keys")) {
+        // Standard retry for other errors
+        console.log(`🔄 Request failed, retrying... (${retryCount + 1}/${this.maxRetries})`)
+        await this.delay(1000 * (retryCount + 1)) // Simple backoff
         return this.fetchEmploymentData(seriesId, retryCount + 1)
       }
 
@@ -315,10 +508,23 @@ export class BLSService {
       const employmentSeriesId = `OEUS000000000000${occupationCode}01`
       const wageSeriesId = `OEUS000000000000${occupationCode}04`
 
-      const [employmentData, wageData] = await Promise.all([
-        this.fetchEmploymentData(employmentSeriesId),
-        this.fetchEmploymentData(wageSeriesId),
-      ])
+      // Sequential fetches instead of parallel to reduce connection load
+      // This is more reliable in serverless environments
+      let employmentData, wageData;
+      
+      try {
+        employmentData = await this.fetchEmploymentData(employmentSeriesId);
+        // Add a small delay between requests
+        await this.delay(500);
+        wageData = await this.fetchEmploymentData(wageSeriesId);
+      } catch (error) {
+        console.error(`Error in sequential fetch for occupation ${occupationCode}:`, error);
+        // Fallback to parallel fetch if sequential fails
+        [employmentData, wageData] = await Promise.all([
+          this.fetchEmploymentData(employmentSeriesId),
+          this.fetchEmploymentData(wageSeriesId),
+        ]);
+      }
 
       const latestEmployment = employmentData[0]?.value || 0
       const latestWage = wageData[0]?.value || 0
@@ -442,5 +648,28 @@ export class BLSService {
   // Get the count of valid API keys
   getValidKeyCount(): number {
     return this.apiKeys.length
+  }
+  
+  // Get network health status
+  getNetworkHealthStatus(): {
+    isHealthy: boolean
+    consecutiveErrors: number
+    circuitBreakerOpen: boolean
+    resetTime: Date | null
+  } {
+    return {
+      isHealthy: !this.networkErrorTracker.isCircuitOpen,
+      consecutiveErrors: this.networkErrorTracker.consecutiveErrors,
+      circuitBreakerOpen: this.networkErrorTracker.isCircuitOpen,
+      resetTime: this.networkErrorTracker.resetTime
+    }
+  }
+  
+  // Reset circuit breaker manually if needed
+  resetCircuitBreaker(): void {
+    this.networkErrorTracker.isCircuitOpen = false
+    this.networkErrorTracker.consecutiveErrors = 0
+    this.networkErrorTracker.resetTime = null
+    console.log('🔌 Circuit breaker manually reset')
   }
 }

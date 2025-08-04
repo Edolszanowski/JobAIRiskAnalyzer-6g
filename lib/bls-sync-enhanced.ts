@@ -94,6 +94,10 @@ export interface JobData {
 
 // Default sync configuration
 export const defaultSyncConfig: SyncConfig = {
+  // Original aggressive desktop-style defaults.
+  // They will be automatically overridden by the conservative
+  // `serverlessDefaults` below when deployed to a serverless
+  // provider (e.g. Vercel / AWS Lambda).
   maxConcurrent: 5,
   batchSize: 50,
   retryAttempts: 3,
@@ -103,6 +107,34 @@ export const defaultSyncConfig: SyncConfig = {
   healthCheckIntervalMs: 60000, // 1 minute
   resumeFromLastCheckpoint: true,
   progressUpdateIntervalMs: 1000, // 1 second
+}
+
+/**
+ * More conservative defaults for serverless / edge runtimes where
+ * simultaneous outbound connections and long-lived tasks are prone
+ * to `ECONNRESET` and memory pressure.
+ */
+const serverlessDefaults: Partial<SyncConfig> = {
+  maxConcurrent: 2,
+  batchSize: 10,
+  retryAttempts: 5,
+  baseRetryDelayMs: 2_000,   // start at 2 s
+  maxRetryDelayMs: 60_000,   // cap at 60 s
+}
+
+/**
+ * Detects if the current process is running inside a typical serverless / edge
+ * environment.  This is a best-effort heuristic based on widely-used
+ * environment variables.  It can be extended if new providers are added.
+ */
+function isServerlessRuntime(): boolean {
+  // Vercel sets `VERCEL="1"` in every serverless / edge function.
+  if (process.env.VERCEL === "1") return true
+  // AWS Lambda exposes the function name in this variable.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) return true
+  // The Next.js edge runtime sets NEXT_RUNTIME to "edge".
+  if (process.env.NEXT_RUNTIME === "edge") return true
+  return false
 }
 
 // ========== ENHANCED BLS SYNC SERVICE ==========
@@ -134,7 +166,12 @@ export class BLSSyncService extends EventEmitter {
     const keysToUse = validApiKeys.length > 0 ? validApiKeys : apiKeys
     
     this.blsService = new BLSService(keysToUse)
-    this.config = { ...defaultSyncConfig, ...config }
+
+    // Decide which defaults to begin with based on runtime.
+    const runtimeIsServerless = isServerlessRuntime()
+    this.config = runtimeIsServerless
+      ? { ...defaultSyncConfig, ...serverlessDefaults, ...config }
+      : { ...defaultSyncConfig, ...config }
     
     // Initialize with provided occupation codes/titles or load them later
     this.occupationCodes = occupationCodes || []
@@ -160,7 +197,10 @@ export class BLSSyncService extends EventEmitter {
       },
     }
 
-    console.log(`🔄 BLS Sync Service initialized with ${this.config.maxConcurrent} concurrent workers`)
+    console.log(
+      `🔄 BLS Sync Service initialised (${runtimeIsServerless ? "serverless" : "standard"} runtime) ` +
+        `with concurrency=${this.config.maxConcurrent}, batchSize=${this.config.batchSize}`
+    )
     console.log(`🔑 Using ${validApiKeys.length} valid API keys from environment`)
   }
 
