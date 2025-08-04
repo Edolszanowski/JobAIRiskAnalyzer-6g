@@ -26,7 +26,11 @@ html {
 }
         `}</style>
       </head>
-      <body>
+      {/* suppressHydrationWarning prevents React from emitting warnings if the
+          server-rendered markup differs slightly from the client. The additional
+          data attribute is useful for debugging and tooling that needs to know
+          this is the root of the client application. */}
+      <body suppressHydrationWarning data-app-root="true">
         {children}
         {/* Global toaster for toast notifications */}
         <Toaster />
