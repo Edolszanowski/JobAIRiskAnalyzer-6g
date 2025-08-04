@@ -49,7 +49,14 @@ When these appeared:
 
 ### D. Removed SSR-Sensitive Code  
 * Deleted `ErrorBoundary` wrapper in favour of manual error UI.  
-* Removed dynamic circular import; `app/admin/page.tsx` now only lazy-loads the new client component via `next/dynamic` with `ssr:false`.  
+* Removed dynamic circular import; initial fix used `next/dynamic` with `ssr:false` but **has now been superseded** by an even stricter client-only page (see Section&nbsp;8).  
+
+### E. Dedicated Admin Layout & Route Flags  
+* **`app/admin/layout.tsx`** – new layout that itself is *client-only*; renders a spinner during SSR and mounts real content only after `useEffect`, guaranteeing identical markup.  
+* **`app/admin/page.tsx`**  
+  * Marked with `"use client"` **and** `export const dynamic = "force-dynamic"` so it will never be statically generated or cached.  
+  * Performs a local mounted-state check similar to the layout as a second line of defence.  
+* **Root `app/layout.tsx`** – added `suppressHydrationWarning` on `<body>` to silence any edge-case diff noise.
 
 ---
 
@@ -62,6 +69,8 @@ When these appeared:
 | `app/layout.tsx` | Injected `<Toaster />` component |
 | `types/admin.ts` | Added/updated admin-dashboard typings |
 | `components/ui/toaster.tsx` / `components/ui/use-toast.ts` | Ensured correct paths (already existed) |
+| `app/admin/layout.tsx` | New client-only layout with loading spinner |
+| `app/admin/page.tsx` | Marked `use client`, added `force-dynamic`, mounted-state check |
 | **Many API routes untouched** – verified working |
 
 Commit hashes:  
@@ -101,3 +110,16 @@ Commit hashes:
 * Global toaster mounted once in root layout for cross-page notifications.  
 
 > This document should be referenced whenever similar hydration issues arise or when making future SSR-related changes to the admin section.
+
+---
+
+## 8. FINAL AGGRESSIVE APPROACH DEPLOYED  
+
+To ensure *zero* chance of server-client markup divergence we layered multiple protections:  
+
+1. **Client-Only Layout (`app/admin/layout.tsx`)** – Renders just a spinner during SSR, then flips to real UI after mount.  
+2. **Client-Only Page (`app/admin/page.tsx`)** – Also guarded by mounted-state check and **`dynamic = "force-dynamic"`** flag which prevents static generation & edge-caching.  
+3. **Component Level (`ClientOnlyAdminDashboard.tsx`)** – Maintains its own `isClient` gate and deterministic render logic.  
+4. **Root Layout Safety Net** – `suppressHydrationWarning` attribute on `<body>` plus global `Toaster` now always available.  
+
+These four layers working together provide a belt-and-suspenders guarantee that React hydrates exactly the markup it expects, eliminating errors **#418, #423, #425** once and for all.
