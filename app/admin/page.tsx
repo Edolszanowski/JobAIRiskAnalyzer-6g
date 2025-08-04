@@ -116,6 +116,12 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [syncStarting, setSyncStarting] = useState(false)
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  /**
+   * mounted flag prevents React hydration mismatches by ensuring we render
+   * the full dashboard only on the client after the first mount. The server
+   * will render the loading skeleton which matches the client’s first paint.
+   */
+  const [mounted, setMounted] = useState(false)
 
   const fetchDatabaseStatus = async () => {
     try {
@@ -270,7 +276,19 @@ export default function AdminDashboard() {
     }
   }, [])
 
-  if (loading) {
+  /**
+   * Mark component as mounted to avoid hydration warnings (#418, #423, #425)
+   */
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  /* -------------------------------------------------------------------- */
+  /*                     RENDER                                             */
+  /* -------------------------------------------------------------------- */
+
+  // While mounting (first paint) render the same loading UI as SSR
+  if (!mounted || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
