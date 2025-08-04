@@ -1,0 +1,310 @@
+{
+  "summary": {
+    "passed": 2,
+    "failed": 11,
+    "skipped": 1,
+    "warnings": 1,
+    "total": 14,
+    "timestamp": "2025-08-04T16:22:03.984Z"
+  },
+  "details": [
+    {
+      "name": "Database connection",
+      "passed": true,
+      "details": {
+        "responseTime": 536.2754,
+        "serverTime": "2025-08-04T16:21:52.463Z"
+      },
+      "timestamp": "2025-08-04T16:21:52.850Z"
+    },
+    {
+      "name": "Database tables",
+      "passed": true,
+      "details": {
+        "tables": [
+          "bls_test_table",
+          "soc_major_groups",
+          "soc_detailed_occupations",
+          "job_titles",
+          "ai_risk_assessments",
+          "job_categories",
+          "job_searches",
+          "bls_job_data_backup",
+          "playing_with_neon",
+          "bls_job_data",
+          "jobs",
+          "migrations"
+        ],
+        "columns": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "employment_2023",
+            "type": "integer"
+          },
+          {
+            "name": "projected_employment_2033",
+            "type": "integer"
+          },
+          {
+            "name": "employment_change_percent",
+            "type": "numeric"
+          },
+          {
+            "name": "median_wage",
+            "type": "numeric"
+          },
+          {
+            "name": "ai_impact_score",
+            "type": "integer"
+          },
+          {
+            "name": "created_at",
+            "type": "timestamp without time zone"
+          },
+          {
+            "name": "updated_at",
+            "type": "timestamp without time zone"
+          },
+          {
+            "name": "automation_risk",
+            "type": "character varying"
+          },
+          {
+            "name": "skills_at_risk",
+            "type": "text"
+          },
+          {
+            "name": "skills_needed",
+            "type": "text"
+          },
+          {
+            "name": "occ_code",
+            "type": "character varying"
+          },
+          {
+            "name": "occ_title",
+            "type": "character varying"
+          },
+          {
+            "name": "future_outlook",
+            "type": "text"
+          },
+          {
+            "name": "job_description",
+            "type": "text"
+          },
+          {
+            "name": "education_required",
+            "type": "character varying"
+          },
+          {
+            "name": "work_experience",
+            "type": "character varying"
+          },
+          {
+            "name": "on_job_training",
+            "type": "character varying"
+          }
+        ]
+      },
+      "timestamp": "2025-08-04T16:21:53.291Z"
+    },
+    {
+      "name": "Record insertion",
+      "passed": false,
+      "details": {
+        "error": "value too long for type character varying(10)",
+        "stack": "error: value too long for type character varying(10)\n    at C:\\Users\\edoly\\JobAIRiskAnalyzer-6g\\node_modules\\pg-pool\\index.js:45:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async testRecordInsertion (C:\\Users\\edoly\\JobAIRiskAnalyzer-6g\\scripts\\reliability-test-suite.js:347:7)\n    at async runTests (C:\\Users\\edoly\\JobAIRiskAnalyzer-6g\\scripts\\reliability-test-suite.js:965:7)"
+      },
+      "timestamp": "2025-08-04T16:21:53.607Z"
+    },
+    {
+      "name": "Database status API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/admin/database-status"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "Sync status API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/admin/sync-status"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "System health API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/admin/system-health"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "Jobs API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/jobs"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "Job suggestions API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/jobs/suggestions?q=software"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "BLS API keys configured",
+      "passed": false,
+      "details": {
+        "error": "No BLS API keys found in environment"
+      },
+      "timestamp": "2025-08-04T16:21:53.608Z"
+    },
+    {
+      "name": "Enhanced sync start API",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/admin/enhanced-sync"
+      },
+      "timestamp": "2025-08-04T16:21:53.609Z"
+    },
+    {
+      "name": "Sync-database consistency",
+      "passed": false,
+      "details": {
+        "error": "Failed to get sync status",
+        "details": {
+          "success": false,
+          "error": "fetch is not a function",
+          "url": "http://localhost:3000/api/admin/sync-status"
+        }
+      },
+      "timestamp": "2025-08-04T16:21:53.609Z"
+    },
+    {
+      "name": "UI polling reliability",
+      "passed": false,
+      "details": {
+        "successfulPolls": 0,
+        "totalPolls": 5,
+        "successRate": 0,
+        "pollResults": [
+          {
+            "timestamp": "2025-08-04T16:21:53.609Z",
+            "success": false
+          },
+          {
+            "timestamp": "2025-08-04T16:21:55.619Z",
+            "success": false
+          },
+          {
+            "timestamp": "2025-08-04T16:21:57.633Z",
+            "success": false
+          },
+          {
+            "timestamp": "2025-08-04T16:21:59.643Z",
+            "success": false
+          },
+          {
+            "timestamp": "2025-08-04T16:22:01.651Z",
+            "success": false
+          }
+        ]
+      },
+      "timestamp": "2025-08-04T16:22:03.655Z"
+    },
+    {
+      "name": "Sync process start",
+      "passed": false,
+      "details": {
+        "success": false,
+        "error": "fetch is not a function",
+        "url": "http://localhost:3000/api/admin/enhanced-sync"
+      },
+      "timestamp": "2025-08-04T16:22:03.983Z"
+    }
+  ],
+  "config": {
+    "database": {
+      "connectionString": "***REDACTED***",
+      "ssl": {
+        "rejectUnauthorized": false
+      },
+      "connectionTimeoutMs": 5000,
+      "statementTimeoutMs": 10000,
+      "idleTimeoutMs": 30000,
+      "max": 5
+    },
+    "api": {
+      "baseUrl": "http://localhost:3000",
+      "endpoints": {
+        "databaseStatus": "/api/admin/database-status",
+        "syncStatus": "/api/admin/sync-status",
+        "enhancedSync": "/api/admin/enhanced-sync",
+        "apiKeys": "/api/admin/api-keys",
+        "systemHealth": "/api/admin/system-health",
+        "jobDetails": "/api/admin/job-details",
+        "jobs": "/api/jobs",
+        "jobSuggestions": "/api/jobs/suggestions"
+      },
+      "timeout": 30000
+    },
+    "bls": {
+      "apiKeys": [],
+      "baseUrl": "https://api.bls.gov/publicAPI/v2/timeseries/data/",
+      "testSeriesId": "CEU0000000001",
+      "timeout": 30000
+    },
+    "testData": {
+      "occupationCodes": [
+        "11-1011",
+        "15-1252",
+        "29-1141",
+        "35-3031",
+        "43-4051"
+      ],
+      "searchTerms": [
+        "software",
+        "nurse",
+        "teacher",
+        "manager",
+        "chef"
+      ]
+    },
+    "tests": {
+      "recordInsertionCount": 3,
+      "syncMonitoringDurationMs": 60000,
+      "syncPollingIntervalMs": 3000,
+      "uiPollingIntervalMs": 2000,
+      "retryAttempts": 3,
+      "retryDelayMs": 2000
+    }
+  },
+  "environment": {
+    "nodeVersion": "v24.2.0",
+    "platform": "win32",
+    "arch": "x64",
+    "env": "development"
+  }
+}
