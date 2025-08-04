@@ -49,6 +49,13 @@ export class BLSService {
   private validationInProgress = false
   private validationQueue: string[] = []
   
+  // When running inside serverless/edge runtimes we may not have reliable
+  // outbound connectivity during cold-starts which can cause the initial
+  // API-key validation to fail.  Instead of blocking the entire sync we
+  // allow a “best effort” mode that skips upfront validation and lets the
+  // normal request-time error handling manage invalid keys.
+  private validationDisabled = false
+
   // Circuit breaker settings
   private networkErrorTracker: NetworkErrorTracker = {
     consecutiveErrors: 0,
@@ -64,6 +71,18 @@ export class BLSService {
   private maxRetries = 5
   private initialBackoffMs = 1000
   private maxBackoffMs = 30000
+
+  /**
+   * Detect common serverless / edge runtime environment variables.
+   * This mirrors the helper used in bls-sync-enhanced.ts so that both
+   * layers share the exact same behaviour.
+   */
+  private isServerlessRuntime(): boolean {
+    if (process.env.VERCEL === "1") return true
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) return true
+    if (process.env.NEXT_RUNTIME === "edge") return true
+    return false
+  }
 
   constructor(apiKeys: string | string[]) {
     // Support both single key and array of keys
@@ -85,8 +104,14 @@ export class BLSService {
 
     console.log(`🔑 BLS Service initialized with ${this.apiKeys.length} API key(s)`)
     
-    // Start async validation of keys
-    this.validateAllApiKeys()
+    // Decide if upfront validation should be disabled
+    this.validationDisabled = this.isServerlessRuntime()
+    if (this.validationDisabled) {
+      console.log("⚠️  API key validation skipped (serverless runtime detected)")
+    } else {
+      // Start async validation of keys
+      this.validateAllApiKeys()
+    }
   }
 
   /**
@@ -94,6 +119,12 @@ export class BLSService {
    * This runs asynchronously to avoid blocking initialization
    */
   private async validateAllApiKeys(): Promise<void> {
+    // Skip validation entirely if disabled or network circuit is open
+    if (this.validationDisabled || this.networkErrorTracker.isCircuitOpen) {
+      console.log("⚠️  Skipping API key validation due to disabled mode or open circuit breaker")
+      return
+    }
+
     if (this.validationInProgress) return
     
     this.validationInProgress = true
@@ -157,8 +188,8 @@ export class BLSService {
           endyear: "2023",
           registrationkey: key,
         }),
-        // Short timeout for validation
-        timeout: 5000
+        // Even shorter timeout for validation to avoid blocking cold-starts
+        timeout: 2000
       })
       
       if (!response.ok) {
@@ -183,7 +214,7 @@ export class BLSService {
     } catch (error) {
       console.error(`Error validating API key: ${error instanceof Error ? error.message : String(error)}`)
       // Don't mark as invalid on network errors - could be temporary
-      return true
+      return true // Treat as potentially valid, will be tested at request time
     }
   }
 
