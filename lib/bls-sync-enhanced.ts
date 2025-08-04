@@ -615,7 +615,7 @@ export class BLSSyncService extends EventEmitter {
 
       finalJobData = {
         code: occupationCode,
-        title: this.occupationTitles[occupationCode] || `Occupation ${occupationCode}`,
+        title: this.occupationTitles[occupationCode] || this.generateJobTitle(occupationCode),
         employment: fallbackEmployment,
         projectedEmployment: Math.round(fallbackEmployment * 1.05), // naive 5 % growth
         medianWage: fallbackWage,
@@ -626,7 +626,7 @@ export class BLSSyncService extends EventEmitter {
     const title =
       this.occupationTitles[occupationCode] ||
       (finalJobData as any).title ||
-      `Occupation ${occupationCode}`
+      this.generateJobTitle(occupationCode)
 
     // Calculate AI impact analysis (simplified version)
     const aiAnalysis = await this.calculateAIImpact(occupationCode, title)
@@ -1791,5 +1791,50 @@ export class BLSSyncService extends EventEmitter {
     if (this.lastProcessingTime.length === 0) return 1000
     const sum = this.lastProcessingTime.reduce((acc, time) => acc + time, 0)
     return sum / this.lastProcessingTime.length
+  }
+
+  // ======================================================================
+  //  Title generation helper
+  // ======================================================================
+  /**
+   * Derive a human-readable occupation title when it is not present in the
+   * baked-in `occupationTitles` map.  Uses the first two SOC digits (major
+   * group) to fall back to a sensible descriptor so that EVERY code always
+   * gets a title and the sync never aborts due to missing titles.
+   *
+   * @param code SOC occupation code (e.g. "15-1252")
+   */
+  private generateJobTitle(code: string): string {
+    // Major group lookup based on first two digits
+    const major = code.split("-")[0]
+    const majorGroupTitles: Record<string, string> = {
+      "11": "Management Occupation",
+      "13": "Business & Financial Occupation",
+      "15": "Computer & Mathematical Occupation",
+      "17": "Architecture & Engineering Occupation",
+      "19": "Life, Physical & Social Science Occupation",
+      "21": "Community & Social Service Occupation",
+      "23": "Legal Occupation",
+      "25": "Education, Training & Library Occupation",
+      "27": "Arts, Design, Entertainment & Media Occupation",
+      "29": "Healthcare Practitioner & Technical Occupation",
+      "31": "Healthcare Support Occupation",
+      "33": "Protective Service Occupation",
+      "35": "Food Preparation & Serving Occupation",
+      "37": "Building & Grounds Cleaning Occupation",
+      "39": "Personal Care & Service Occupation",
+      "41": "Sales & Related Occupation",
+      "43": "Office & Administrative Support Occupation",
+      "45": "Farming, Fishing & Forestry Occupation",
+      "47": "Construction & Extraction Occupation",
+      "49": "Installation, Maintenance & Repair Occupation",
+      "51": "Production Occupation",
+      "53": "Transportation & Material Moving Occupation",
+      // default fallback handled below
+    }
+
+    const base = majorGroupTitles[major] ?? "Occupation"
+    // Append code to guarantee uniqueness/readability
+    return `${base} (${code})`
   }
 }
