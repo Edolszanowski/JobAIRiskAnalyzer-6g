@@ -6,10 +6,9 @@
 export const dynamic = "force-dynamic"
 
 import { useState, useEffect } from "react"
-import { Loader2 } from "lucide-react"
 
-// Import the dashboard component directly since we're handling client-side rendering ourselves
-import ClientOnlyAdminDashboard from "@/components/admin/ClientOnlyAdminDashboard"
+// Import the new ultra-lightweight, client-only dashboard
+import MinimalAdminDashboard from "@/components/admin/MinimalAdminDashboard"
 
 /**
  * Admin Dashboard Page - COMPLETELY CLIENT SIDE RENDERED
@@ -32,19 +31,25 @@ export default function AdminPage() {
   // This ensures identical markup between server and client
   if (!mounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Loading admin dashboard...</p>
-        </div>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f9fafb",
+          fontFamily: "system-ui, sans-serif",
+        }}
+      >
+        <p>Loading admin dashboard…</p>
       </div>
     )
   }
   
   // Only render the dashboard after client-side mount
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ClientOnlyAdminDashboard />
+    <div style={{ minHeight: "100vh", background: "#f9fafb" }}>
+      <MinimalAdminDashboard />
     </div>
   )
 }
