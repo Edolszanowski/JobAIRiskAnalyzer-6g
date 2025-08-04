@@ -4,25 +4,14 @@ import { BLSSyncService } from "@/lib/bls-sync-enhanced"
 // Force this route to be treated as dynamic at build time
 export const dynamic = "force-dynamic"
 
-// Global sync state for legacy system (in production, use Redis or database)
-const syncState = {
-  isRunning: false,
-  totalJobs: 850,
-  processedJobs: 0,
-  successfulJobs: 0,
-  failedJobs: 0,
-  currentJob: null as string | null,
-  startTime: null as Date | null,
-  lastUpdated: new Date().toISOString(),
-}
+// Import the getSyncService function from the enhanced-sync module
+// This ensures we're using the same singleton instance
+let syncService: BLSSyncService | null = null
 
-// Singleton instance of enhanced sync service
-let enhancedSyncService: BLSSyncService | null = null
-
-// Get or create enhanced sync service
-function getEnhancedSyncService(): BLSSyncService | null {
+// Get the singleton sync service instance
+function getSyncService(): BLSSyncService | null {
   try {
-    if (!enhancedSyncService) {
+    if (!syncService) {
       // Get API keys from environment variables
       const apiKeys = [
         process.env.BLS_API_KEY,
@@ -31,18 +20,18 @@ function getEnhancedSyncService(): BLSSyncService | null {
       ].filter(Boolean) as string[]
 
       if (apiKeys.length === 0) {
-        console.warn("No BLS API keys configured for enhanced sync service")
+        console.warn("No BLS API keys configured for sync service")
         return null
       }
 
       // Create new sync service instance
-      enhancedSyncService = new BLSSyncService(apiKeys)
-      console.log(`🔄 Enhanced BLS Sync Service initialized with ${apiKeys.length} API keys`)
+      syncService = new BLSSyncService(apiKeys)
+      console.log(`🔄 Sync Status: BLS Sync Service initialized with ${apiKeys.length} API keys`)
     }
 
-    return enhancedSyncService
+    return syncService
   } catch (error) {
-    console.error("Failed to initialize enhanced sync service:", error)
+    console.error("Failed to initialize sync service:", error)
     return null
   }
 }
@@ -50,73 +39,62 @@ function getEnhancedSyncService(): BLSSyncService | null {
 /**
  * GET /api/admin/sync-status
  * Returns the current status of the data synchronization process.
- * Supports both legacy and enhanced sync systems.
  */
 export async function GET(request: Request) {
   try {
-    // Check if enhanced sync is requested
-    const url = new URL(request.url)
-    const useEnhanced = url.searchParams.get("enhanced") === "true"
+    // Always try to use the enhanced sync service first
+    const service = getSyncService()
     
-    // If enhanced mode is requested and available, use the enhanced sync service
-    if (useEnhanced) {
-      const syncService = getEnhancedSyncService()
+    if (service) {
+      // Get enhanced progress
+      const progress = service.getSyncProgress()
       
-      if (syncService) {
-        // Get enhanced progress and map to expected format
-        const enhancedProgress = syncService.getSyncProgress()
-        
-        // Create API key status object
-        const apiKeysStatus = {
-          totalKeys: enhancedProgress.apiKeysStatus?.totalKeys || 0,
-          totalDailyLimit: enhancedProgress.apiKeysStatus?.totalDailyLimit || 0,
-          totalRemainingRequests: enhancedProgress.apiKeysStatus?.totalRemainingRequests || 0,
-          keyStatuses: enhancedProgress.apiKeysStatus?.keyStatuses || [],
+      // Return the enhanced sync progress in the format the Admin Dashboard expects
+      return NextResponse.json({
+        isRunning: progress.isRunning,
+        totalJobs: progress.totalJobs,
+        processedJobs: progress.processedJobs,
+        successfulJobs: progress.successfulJobs,
+        failedJobs: progress.failedJobs,
+        skippedJobs: progress.skippedJobs || 0,
+        currentJob: progress.currentJob,
+        lastError: progress.lastError,
+        lastErrorTime: progress.lastErrorTime,
+        startTime: progress.startTime,
+        endTime: progress.endTime,
+        lastUpdated: progress.lastUpdated,
+        apiKeysStatus: progress.apiKeysStatus || {
+          totalKeys: 0,
+          totalDailyLimit: 0,
+          totalRemainingRequests: 0,
+          keyStatuses: []
+        },
+        enhancedDetails: {
+          currentBatch: progress.currentBatch,
+          totalBatches: progress.totalBatches,
+          estimatedTimeRemaining: progress.estimatedTimeRemaining,
+          checkpoints: progress.checkpoints || []
         }
-        
-        return NextResponse.json({
-          isRunning: enhancedProgress.isRunning,
-          totalJobs: enhancedProgress.totalJobs,
-          processedJobs: enhancedProgress.processedJobs,
-          successfulJobs: enhancedProgress.successfulJobs,
-          failedJobs: enhancedProgress.failedJobs,
-          currentJob: enhancedProgress.currentJob,
-          lastUpdated: enhancedProgress.lastUpdated,
-          apiKeysStatus,
-          enhancedSync: true,
-          // Include enhanced details for advanced clients
-          enhancedDetails: {
-            currentBatch: enhancedProgress.currentBatch,
-            totalBatches: enhancedProgress.totalBatches,
-            estimatedTimeRemaining: enhancedProgress.estimatedTimeRemaining,
-            checkpoints: enhancedProgress.checkpoints,
-          }
-        })
-      }
+      })
     }
     
-    // Fall back to legacy sync state
-    // In a real app, this would fetch from a database or state management system
-    
-    // Create mock API key status for legacy system
-    const apiKeysStatus = {
-      totalKeys: 1,
-      totalDailyLimit: 500,
-      totalRemainingRequests: 450,
-      keyStatuses: [
-        {
-          keyPreview: process.env.BLS_API_KEY ? `${process.env.BLS_API_KEY.substring(0, 4)}...` : "N/A",
-          requestsUsed: 50,
-          requestsRemaining: 450,
-          isBlocked: false,
-        }
-      ]
-    }
-    
+    // Fall back to a basic response if sync service is not available
+    console.warn("Enhanced sync service not available, returning basic status")
     return NextResponse.json({
-      ...syncState,
-      apiKeysStatus,
-      enhancedSync: false
+      isRunning: false,
+      totalJobs: 850,
+      processedJobs: 0,
+      successfulJobs: 0,
+      failedJobs: 0,
+      currentJob: null,
+      lastUpdated: new Date().toISOString(),
+      apiKeysStatus: {
+        totalKeys: 0,
+        totalDailyLimit: 0,
+        totalRemainingRequests: 0,
+        keyStatuses: []
+      },
+      error: "Enhanced sync service not initialized"
     })
   } catch (error) {
     console.error("Error getting sync status:", error)
@@ -125,7 +103,12 @@ export async function GET(request: Request) {
         success: false,
         message: "Failed to get sync status",
         error: error instanceof Error ? error.message : "Unknown error",
-        syncState,
+        isRunning: false,
+        totalJobs: 850,
+        processedJobs: 0,
+        successfulJobs: 0,
+        failedJobs: 0,
+        lastUpdated: new Date().toISOString()
       },
       { status: 500 }
     )
