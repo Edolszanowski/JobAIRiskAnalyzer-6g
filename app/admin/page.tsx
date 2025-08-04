@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +21,9 @@ import {
   Users,
   TrendingUp,
   Loader2,
+  AlertCircle,
 } from "lucide-react"
+import { toast } from "@/components/ui/use-toast"
 
 interface DatabaseStatus {
   connected: boolean
@@ -63,8 +65,10 @@ interface SyncStatus {
   processedJobs: number
   successfulJobs: number
   failedJobs: number
+  skippedJobs?: number
   currentJob?: string
   lastUpdated: string
+  lastError?: string
   apiKeysStatus: {
     totalKeys: number
     totalDailyLimit: number
@@ -75,6 +79,12 @@ interface SyncStatus {
       requestsRemaining: number
       isBlocked: boolean
     }>
+  }
+  enhancedDetails?: {
+    currentBatch?: number
+    totalBatches?: number
+    estimatedTimeRemaining?: number
+    checkpoints?: any[]
   }
 }
 
@@ -104,6 +114,8 @@ export default function AdminDashboard() {
   const [jobDetails, setJobDetails] = useState<JobDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [syncStarting, setSyncStarting] = useState(false)
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   const fetchDatabaseStatus = async () => {
     try {
@@ -129,9 +141,17 @@ export default function AdminDashboard() {
     try {
       const response = await fetch("/api/admin/sync-status")
       const data = await response.json()
-      setSyncStatus(data)
+      
+      if (data.syncState) {
+        setSyncStatus(data.syncState)
+      } else {
+        setSyncStatus(data)
+      }
+      
+      return data.syncState?.isRunning || data.isRunning || false
     } catch (error) {
       console.error("Failed to fetch sync status:", error)
+      return false
     }
   }
 
@@ -151,18 +171,80 @@ export default function AdminDashboard() {
     setRefreshing(false)
   }
 
+  // Update refresh interval based on sync status
+  const updateRefreshInterval = (isRunning: boolean) => {
+    // Clear existing interval
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current)
+      refreshIntervalRef.current = null
+    }
+    
+    // Set new interval based on sync status
+    const intervalTime = isRunning ? 3000 : 30000 // 3 seconds if running, 30 seconds otherwise
+    refreshIntervalRef.current = setInterval(async () => {
+      const stillRunning = await fetchSyncStatus()
+      if (stillRunning) {
+        // If sync is running, also refresh job details
+        await fetchJobDetails()
+      } else {
+        // If sync stopped, refresh everything and update interval
+        await refreshAll()
+        updateRefreshInterval(false)
+      }
+    }, intervalTime)
+  }
+
   const startSync = async () => {
     try {
-      const response = await fetch("/api/admin/start-sync", { method: "POST" })
+      setSyncStarting(true)
+      
+      const response = await fetch("/api/admin/enhanced-sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          forceRestart: true,
+          maxConcurrent: 5,
+          batchSize: 50,
+        }),
+      })
+      
       const data = await response.json()
 
       if (data.success) {
-        await fetchSyncStatus()
+        toast({
+          title: "Sync Started",
+          description: "Data synchronization process has started successfully.",
+          variant: "default",
+        })
+        
+        // Update sync status
+        if (data.syncState) {
+          setSyncStatus(data.syncState)
+        }
+        
+        // Start more frequent updates
+        updateRefreshInterval(true)
       } else {
-        console.error("Failed to start sync:", data.error)
+        toast({
+          title: "Failed to Start Sync",
+          description: data.message || "An error occurred while starting the sync process.",
+          variant: "destructive",
+        })
+        console.error("Failed to start sync:", data.error || data.message)
       }
     } catch (error) {
+      toast({
+        title: "Sync Error",
+        description: "Could not connect to the sync service. Please try again.",
+        variant: "destructive",
+      })
       console.error("Failed to start sync:", error)
+    } finally {
+      setSyncStarting(false)
+      // Refresh status immediately
+      await fetchSyncStatus()
     }
   }
 
@@ -170,14 +252,22 @@ export default function AdminDashboard() {
     const loadInitialData = async () => {
       setLoading(true)
       await refreshAll()
+      
+      // Check if sync is already running
+      const isRunning = syncStatus?.isRunning || false
+      updateRefreshInterval(isRunning)
+      
       setLoading(false)
     }
 
     loadInitialData()
 
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(refreshAll, 30000)
-    return () => clearInterval(interval)
+    // Cleanup interval on component unmount
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current)
+      }
+    }
   }, [])
 
   if (loading) {
@@ -538,8 +628,17 @@ export default function AdminDashboard() {
                           {syncStatus.isRunning ? "Currently running..." : "Ready to start"}
                         </p>
                       </div>
-                      <Button onClick={startSync} disabled={syncStatus.isRunning} className="flex items-center gap-2">
-                        {syncStatus.isRunning ? (
+                      <Button 
+                        onClick={startSync} 
+                        disabled={syncStatus.isRunning || syncStarting} 
+                        className="flex items-center gap-2"
+                      >
+                        {syncStarting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Starting...
+                          </>
+                        ) : syncStatus.isRunning ? (
                           <>
                             <Pause className="h-4 w-4" />
                             Running...
@@ -579,13 +678,29 @@ export default function AdminDashboard() {
                         <div>
                           <div className="flex justify-between text-sm mb-2">
                             <span>Progress</span>
-                            <span>{Math.round((syncStatus.processedJobs / syncStatus.totalJobs) * 100)}%</span>
+                            <span>
+                              {Math.round((syncStatus.processedJobs / syncStatus.totalJobs) * 100)}%
+                              {syncStatus.enhancedDetails?.currentBatch && syncStatus.enhancedDetails?.totalBatches && (
+                                <span className="ml-2 text-gray-500">
+                                  (Batch {syncStatus.enhancedDetails.currentBatch}/{syncStatus.enhancedDetails.totalBatches})
+                                </span>
+                              )}
+                            </span>
                           </div>
                           <Progress
                             value={(syncStatus.processedJobs / syncStatus.totalJobs) * 100}
                             className="w-full"
                           />
                         </div>
+
+                        {syncStatus.enhancedDetails?.estimatedTimeRemaining && (
+                          <div className="flex items-center text-sm text-gray-600 mt-1">
+                            <Clock className="h-4 w-4 mr-1" />
+                            <span>
+                              Estimated time remaining: {Math.round(syncStatus.enhancedDetails.estimatedTimeRemaining / 60000)} minutes
+                            </span>
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -594,6 +709,37 @@ export default function AdminDashboard() {
                         <p className="text-sm text-blue-800">
                           Currently processing: <span className="font-medium">{syncStatus.currentJob}</span>
                         </p>
+                      </div>
+                    )}
+
+                    {syncStatus.lastError && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-start">
+                        <AlertCircle className="h-5 w-5 text-red-600 mr-2 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-red-800">Sync Error</p>
+                          <p className="text-sm text-red-700">{syncStatus.lastError}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {syncStatus.skippedJobs > 0 && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-sm text-yellow-800">
+                          Skipped {syncStatus.skippedJobs} jobs that already had AI analysis
+                        </p>
+                      </div>
+                    )}
+
+                    {syncStatus.apiKeysStatus && syncStatus.apiKeysStatus.totalRemainingRequests < 100 && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md flex items-start">
+                        <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-yellow-800">API Request Limit Warning</p>
+                          <p className="text-sm text-yellow-700">
+                            Only {syncStatus.apiKeysStatus.totalRemainingRequests} API requests remaining today.
+                            Sync may pause when limit is reached.
+                          </p>
+                        </div>
                       </div>
                     )}
                   </>
